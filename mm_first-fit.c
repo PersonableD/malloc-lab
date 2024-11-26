@@ -36,10 +36,9 @@ team_t team = {
 };
 
 static char *heap_listp;//항상 프롤로그 블록을 가리키는 포인터
-static char *last_bp;
 // 정렬 기준은 8바이트
 /* single word (4) or double word (8) alignment */
-// #define ALIGNMENT 8
+#define ALIGNMENT 8
 //8단위로 할당하겠다라는 말 8바이트 까지는 8에 꽉채우는데 9바이트 이상 할당해야할때는 16바이트 할당이 필요함
 /* rounds up to the nearest multiple of ALIGNMENT */
 // #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
@@ -74,7 +73,6 @@ static void *coalesce(void *bp){
     //이전 블록 다음 블록 둘 다 사용중인 경우
     if(prev_alloc && next_alloc){
         //병합불가하니 그냥 포인터만 반환
-        // last_bp = bp;
         return bp;
     }
     //이전 블록은 사용중이고 다음 블록 이 free인 상태
@@ -95,7 +93,6 @@ static void *coalesce(void *bp){
         PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));//다음 푸터 사이즈 업뎃
         bp = PREV_BLKP(bp);//이전블록 포인터가 현재 포인터가 됨
     }
-    last_bp = bp;
     return bp;
 }
 
@@ -128,7 +125,7 @@ int mm_init(void)
     PUT(heap_listp + (2 * WSIZE), PACK(DSIZE, 1));//prologueFooter
     PUT(heap_listp + (3 * WSIZE), PACK(0, 1));//epilog header
     heap_listp += (2 * WSIZE);//prologue 가운데를 가르키는 포인터가 됨.
-    last_bp = heap_listp;
+
     if(extend_heap(CHUNKSIZE/WSIZE)==NULL){
         return -1;
     }
@@ -142,24 +139,25 @@ int mm_init(void)
  */
 
 static void *find_fit(size_t asize){
-    char *bp = last_bp;
+    void *bp;
 
-    for (bp = NEXT_BLKP(bp); GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)){
-        if(!GET_ALLOC(HDRP(bp)) && GET_SIZE(HDRP(bp))>= asize){
-            last_bp = bp;
+    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)){
+        if(!GET_ALLOC(HDRP(bp)) && asize <= GET_SIZE(HDRP(bp))){
             return bp;
         }
     }
-    bp = heap_listp;
-    while(bp<last_bp){
-        bp = NEXT_BLKP(bp);
-        if(!GET_ALLOC(HDRP(bp)) && GET_SIZE(HDRP(bp))>= asize){
-            last_bp = bp;
-            return bp;
-        }
-    }
-
     return NULL;
+    //에필로그 헤더의 사이즈는 0
+    // char *bp = heap_listp + (3*WSIZE);
+    // while(GET(HDRP(bp))!=0){
+    //     size_t isused = GET_ALLOC(HDRP(bp));
+    //     size_t free_size = GET_SIZE(HDRP(bp));
+    //     if(!isused && asize<=free_size){
+    //         return bp;
+    //     }
+    //     bp = bp + GET_SIZE(HDRP(bp));
+    // }
+    // return NULL;
 }
 
 static void place(void *bp, size_t asize){
@@ -195,7 +193,6 @@ void *mm_malloc(size_t size)
     //기존 힙에 블록이 들어갈자리가 있으면 넣는다.
     if((bp=find_fit(asize))!=NULL){
         place(bp, asize);
-        // last_bp = bp;
         return bp;
     }
 
@@ -204,7 +201,6 @@ void *mm_malloc(size_t size)
         return NULL;
     }
     place(bp, asize);
-    // last_bp = bp;
     return bp;
 }
 
@@ -240,5 +236,3 @@ void *mm_realloc(void *ptr, size_t size)
     mm_free(oldptr);
     return newptr;
 }
-
-
